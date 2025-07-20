@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <!-- Standard PWA meta -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#000000">
+
+    <!-- iOS-specific -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Mouse Remote">
+
+    <!-- Icons for iOS (required for home screen app icon) -->
+    <link rel="apple-touch-icon" href="/icons/icon-192x192.png">
+    <!-- You can include multiple sizes if needed -->
+    <!-- <link rel="apple-touch-icon" sizes="180x180" href="/icons/icon-180x180.png"> -->
+
+    <!-- Splash screens (optional but improves UX) -->
+    <link rel="apple-touch-startup-image" href="/splash/launch.png">
+
+    <title>Remote Mouse Client</title>
+    <!-- Tailwind CSS CDN for easy styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background-color: #1a202c; /* Dark background */
+            color: #e2e8f0; /* Light text */
+            overflow: auto; /* Prevent scrolling */
+        }
+        #touchpad {
+            touch-action: none; /* Prevent default browser touch actions like scrolling/zooming */
+            -webkit-user-select: none; /* Disable text selection on iOS */
+            -moz-user-select: none; /* Disable text selection on Firefox */
+            -ms-user-select: none; /* Disable text selection on IE/Edge */
+            user-select: none; /* Disable text selection */
+        }
+        #keyboardFocus{
+            width: 0;
+            height: 0;
+            opacity: 0;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-100 flex flex-col items-center justify-center min-h-screen p-4">
+    <div class="container mx-auto max-w-md bg-gray-800 rounded-xl shadow-2xl p-6 space-y-6">
+        <h1 class="text-3xl font-bold text-center text-blue-400 mb-6">Remote Mouse</h1>
+
+        <div id="status-message" class="text-center text-lg font-medium">
+            Connecting...
+        </div>
+
+        <input type="text" id="ipAddress" placeholder="Enter PC IP Address (e.g., 192.168.1.100)"
+        class="w-full p-3 rounded-lg bg-gray-700 border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-100 placeholder-gray-400">
+        <button id="connectButton"
+                class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105">
+            Connect
+        </button>
+        
+        <input type="text" id="typeText" placeholder="Enter some text"
+        class="w-full p-3 rounded-lg bg-gray-700 border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-100 placeholder-gray-400">
+        <button id="typeTextButton"
+                class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105">
+            Type
+        </button>
+        <input type="text" id="keyboardFocus" class="opacity-0 w-0 h-0">
+        <button id="keyboardButton"
+                class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105">
+            Keyboard
+        </button>
+        
+
+        <div id="touchpad"
+             class="w-full bg-gray-700 rounded-xl shadow-inner border-2 border-gray-600 flex items-center justify-center relative overflow-hidden"
+             style="height: 400px;">
+            <div class="absolute inset-0 flex items-center justify-center text-gray-400 text-2xl font-semibold">
+                Touchpad Area
+            </div>
+            <!-- Visual feedback for touch -->
+            <div id="touch-indicator" class="absolute bg-blue-500 rounded-full opacity-0 transition-opacity duration-100" style="width: 20px; height: 20px;"></div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4 mt-6">
+            <button id="leftClickButton"
+                    class="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105">
+                Left Click
+            </button>
+            <button id="rightClickButton"
+                    class="bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105">
+                Right Click
+            </button>
+        </div>
+
+        <div class="flex flex-col items-center mt-6 space-y-3">
+            <label for="sensitivity" class="text-gray-300 text-lg">Sensitivity:</label>
+            <input type="range" id="sensitivity" min="0.1" max="5" step="0.1" value="1"
+                   class="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer range-lg">
+            <span id="sensitivity-value" class="text-gray-400">1.0</span>
+        </div>
+    </div>
+
+    <!-- Socket.IO client library -->
+    <script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
+    <script>
+        // Client-side JavaScript for the remote mouse
+        let socket;
+        let isConnected = false;
+        let lastTouchX = null;
+        let lastTouchY = null;
+        let sensitivity = 1.0; // Default sensitivity
+        let fingerCount = 0;
+        let isMove = false;
+
+        const touchpad = document.getElementById('touchpad');
+        const statusMessage = document.getElementById('status-message');
+        const ipAddressInput = document.getElementById('ipAddress');
+        const connectButton = document.getElementById('connectButton');
+        const typeTextInput = document.getElementById('typeText');
+        const typeTextButton = document.getElementById('typeTextButton');
+        const leftClickButton = document.getElementById('leftClickButton');
+        const rightClickButton = document.getElementById('rightClickButton');
+        const sensitivitySlider = document.getElementById('sensitivity');
+        const sensitivityValueSpan = document.getElementById('sensitivity-value');
+        const touchIndicator = document.getElementById('touch-indicator');
+
+        const keyboardButton = document.getElementById('keyboardButton');
+        const keyboardFocus = document.getElementById('keyboardFocus')
+
+        // Load IP address from local storage if available
+        const savedIp = localStorage.getItem('remoteMouseIp');
+        if (savedIp) {
+            ipAddressInput.value = savedIp;
+        } else if (location.hostname !== 'localhost') {
+            ipAddressInput.value = location.hostname;
+        }
+
+        // Load sensitivity from local storage if available
+        const savedSensitivity = localStorage.getItem('remoteMouseSensitivity');
+        if (savedSensitivity) {
+            sensitivitySlider.value = savedSensitivity;
+            sensitivity = parseFloat(savedSensitivity);
+            sensitivityValueSpan.textContent = sensitivity.toFixed(1);
+        }
+
+        // Function to update status message
+        function updateStatus(message, colorClass = 'text-yellow-400') {
+            statusMessage.textContent = message;
+            statusMessage.className = `text-center text-lg font-medium ${colorClass}`;
+        }
+
+        // Function to connect to the server
+        function connectToServer() {
+            const ip = ipAddressInput.value.trim();
+            if (!ip) {
+                updateStatus('Please enter a PC IP address.', 'text-red-400');
+                return;
+            }
+
+            // Save IP address to local storage
+            localStorage.setItem('remoteMouseIp', ip);
+
+            updateStatus(`Attempting to connect to ${ip}...`, 'text-yellow-400');
+            
+            // Disconnect existing socket if any
+            if (socket) {
+                socket.disconnect();
+            }
+
+            // Connect to the Socket.IO server on the PC
+            // Ensure you use the correct port (e.g., 3000 as in the server example)
+            socket = io(`http://${ip}:3000`); 
+
+            socket.on('connect', () => {
+                isConnected = true;
+                updateStatus('Connected to PC!', 'text-green-400');
+                console.log('Connected to server');
+            });
+
+            socket.on('disconnect', () => {
+                isConnected = false;
+                updateStatus('Disconnected from PC.', 'text-red-400');
+                console.log('Disconnected from server');
+            });
+
+            socket.on('connect_error', (error) => {
+                isConnected = false;
+                updateStatus(`Connection failed: ${error.message}. Make sure the server is running and the IP is correct.`, 'text-red-400');
+                console.error('Connection error:', error);
+            });
+        }
+
+        // Event listener for connect button
+        connectButton.addEventListener('click', connectToServer);
+
+        // Event lister for type text butoon
+        typeTextButton.addEventListener('click', () => {
+            const text = typeTextInput.value;
+            if (!isConnected) return;
+
+            socket.emit('type', text)
+        })
+
+        window.addEventListener('keydown', (e) => {
+            if (!isConnected || e.target === typeTextInput || e.target === ipAddressInput ) return;
+            socket.emit('someKey', {code: e.keyCode})
+        })
+
+        keyboardButton.addEventListener('click', () => {
+            keyboardFocus.focus();
+        })
+
+        // Touchpad event listeners
+        touchpad.addEventListener('touchstart', (e) => {
+            if (!isConnected) {
+                updateStatus('Not connected. Please connect first.', 'text-red-400');
+                return;
+            }
+            e.preventDefault(); // Prevent scrolling/zooming
+            fingerCount = e.touches.length;
+            if (fingerCount === 1) {
+                lastTouchX = e.touches[0].clientX;
+                lastTouchY = e.touches[0].clientY;
+                // Show touch indicator
+                touchIndicator.style.opacity = '1';
+                touchIndicator.style.transform = `translate(${e.touches[0].clientX - touchpad.getBoundingClientRect().left - 10}px, ${e.touches[0].clientY - touchpad.getBoundingClientRect().top - 10}px)`;
+            } else if (fingerCount === 2) {
+                lastTouchX = e.touches[0].clientX;
+                lastTouchY = e.touches[0].clientY;
+            }
+        });
+
+        touchpad.addEventListener('touchmove', (e) => {
+            if (!isConnected || (fingerCount !== 1 && fingerCount !== 2)) return;
+            isMove = true;
+            e.preventDefault();
+
+
+            const currentTouchX = e.touches[0].clientX;
+            const currentTouchY = e.touches[0].clientY;
+
+            if (lastTouchX !== null && lastTouchY !== null) {
+                const dx = (currentTouchX - lastTouchX) * sensitivity;
+                const dy = (currentTouchY - lastTouchY) * sensitivity;
+
+                if (fingerCount === 2) {
+                    socket.emit('scroll', {direction: dy < 0 ? 'up' : 'down', amount: Math.abs(dy)})
+                } else {
+                    socket.emit('mousemove', { dx, dy });
+                }
+            }
+            lastTouchX = currentTouchX;
+            lastTouchY = currentTouchY;
+
+            // Update touch indicator position
+            touchIndicator.style.transform = `translate(${currentTouchX - touchpad.getBoundingClientRect().left - 10}px, ${currentTouchY - touchpad.getBoundingClientRect().top - 10}px)`;
+        });
+
+        touchpad.addEventListener('touchend', () => {
+            if (!isMove) {
+                if (fingerCount === 1) {
+                    socket.emit('leftclick')
+                }
+                if (fingerCount === 2) {
+                    socket.emit('rightclick');
+                }
+            }
+            isMove = false;
+            lastTouchX = null;
+            lastTouchY = null;
+            // Hide touch indicator
+            touchIndicator.style.opacity = '0';
+        });
+
+        // Click button event listeners
+        leftClickButton.addEventListener('click', () => {
+            if (isConnected) {
+                socket.emit('leftclick');
+                console.log('Left click sent');
+            } else {
+                updateStatus('Not connected. Please connect first.', 'text-red-400');
+            }
+        });
+
+        rightClickButton.addEventListener('click', () => {
+            if (isConnected) {
+                socket.emit('rightclick');
+                console.log('Right click sent');
+            } else {
+                updateStatus('Not connected. Please connect first.', 'text-red-400');
+            }
+        });
+
+        // Sensitivity slider event listener
+        sensitivitySlider.addEventListener('input', (e) => {
+            sensitivity = parseFloat(e.target.value);
+            sensitivityValueSpan.textContent = sensitivity.toFixed(1);
+            localStorage.setItem('remoteMouseSensitivity', sensitivity); // Save sensitivity
+        });
+
+        // Initial connection attempt if IP is already saved
+        if (savedIp) {
+            connectToServer();
+        } else {
+            updateStatus('Enter PC IP and connect.', 'text-gray-400');
+        }
+    </script>
+</body>
+</html>
