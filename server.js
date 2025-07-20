@@ -43,6 +43,12 @@ io.on('connection', (socket) => {
     console.log('Right click performed');
   });
 
+  // Listent for middleClick events
+  socket.on('middleClick', () => {
+    mouse.click(Button.MIDDLE);
+    console.log('Middle click performed');
+  })
+
   // Listen for scroll events
   socket.on('scroll', async (data) => {
 
@@ -54,6 +60,7 @@ io.on('connection', (socket) => {
       mouse.scrollDown(amount * 1.3)
     }
   });
+
 
   // Listen type events
   socket.on('type', (text) => {
