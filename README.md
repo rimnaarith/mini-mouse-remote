@@ -43,6 +43,8 @@ Then open your browser and go to:
 http://<your-ip>:3000
 ```
 
+The server also prints the available IPv4 address(es) and a QR code in the terminal. Scan the QR code with your phone to open the remote mouse page.
+
 💡 Tip: You must access the server from the same local network (e.g., your phone and computer are on the same Wi-Fi).
 
 ---

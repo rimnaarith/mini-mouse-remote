@@ -2,7 +2,9 @@
 import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
+import { networkInterfaces } from 'node:os';
 import { mouse, Button, keyboard } from '@nut-tree-fork/nut-js';
+import qrcode from 'qrcode-terminal';
 import { keyCodeToKeyEnum } from './utils.js';
 
 const app = express();
@@ -89,6 +91,25 @@ io.on('connection', (socket) => {
 // Start the server
 server.listen(PORT, () => {
   console.log(`Remote Mouse Server running on port ${PORT}`);
-  console.log('To connect, open the client HTML on your phone and enter this PC\'s IP address.');
-  console.log('Make sure your firewall allows connections to port ' + PORT);
+
+  const ipv4Addresses = [
+    ...new Set(
+      Object.values(networkInterfaces())
+        .flatMap((interfaces) => interfaces ?? [])
+        .filter((address) => address.family === 'IPv4' && !address.internal)
+        .map((address) => address.address)
+    )
+  ];
+
+  if (ipv4Addresses.length === 0) {
+    ipv4Addresses.push('127.0.0.1');
+  }
+
+  for (const address of ipv4Addresses) {
+    const url = `http://${address}:${PORT}`;
+    console.log(`Open on your phone: ${url}`);
+    qrcode.generate(url, { small: true });
+  }
+
+  console.log(`Make sure your firewall allows connections to port ${PORT}.`);
 });
